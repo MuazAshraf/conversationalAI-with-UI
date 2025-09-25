@@ -1,0 +1,68 @@
+# Exclude everything by default
+/*
+
+# Allow specific files and folders
+!.gitignore
+!requirements.txt
+!rag.py
+!chatgpt-frontend/
+
+# Exclude node_modules and build artifacts within chatgpt-frontend
+chatgpt-frontend/node_modules/
+chatgpt-frontend/dist/
+chatgpt-frontend/build/
+chatgpt-frontend/.next/
+chatgpt-frontend/.cache/
+chatgpt-frontend/.parcel-cache/
+chatgpt-frontend/coverage/
+chatgpt-frontend/*.log
+chatgpt-frontend/.env
+chatgpt-frontend/.env.local
+chatgpt-frontend/.env.production
+
+# Python cache files (in case they exist in chatgpt-frontend)
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+**/*.so
+
+# IDE files
+**/.vscode/
+**/.idea/
+**/**.swp
+**/.DS_Store
+**/Thumbs.db
+
+# Temporary files
+**/tmp/
+**/temp/
+**/*.tmp
+**/*.temp
+
+# Logs
+**/logs/
+**/*.log
+**/npm-debug.log*
+**/yarn-debug.log*
+**/yarn-error.log*
+
+# Package manager files (except package.json and package-lock.json)
+chatgpt-frontend/yarn.lock
+chatgpt-frontend/pnpm-lock.yaml
+
+# Testing
+chatgpt-frontend/cypress/videos/
+chatgpt-frontend/cypress/screenshots/
+chatgpt-frontend/*.test.js.snap
+
+# Production builds
+chatgpt-frontend/out/
+
+# Debug
+chatgpt-frontend/*.pid
+chatgpt-frontend/*.seed
+chatgpt-frontend/*.pid.lock
+
+# Misc
+chatgpt-frontend/.eslintcache
+chatgpt-frontend/.stylelintcache
