@@ -40,22 +40,30 @@ export const apiService = {
   // Health check
   healthCheck: () => api.get('/health'),
 
-  // Chat endpoint - matches backend /ask route
+  // Chat endpoint - supports both Pinecone and CSV modes
   ask: (data: {
-    namespace: string;
+    mode?: 'pinecone' | 'csv';
+    namespace?: string;
+    file_id?: string;
     thread_id?: string;
+    enabled_tools?: Array<'customer_support' | 'content_optimizer'>;
     messages: Array<{ question: string }>
   }) => api.post('/ask', data),
 
   // Get all namespaces
   getNamespaces: () => api.get('/namespaces'),
 
+  // Delete a namespace
+  deleteNamespace: (namespace: string) => api.delete(`/namespaces/${namespace}`),
+
   // Upload document to namespace
-  uploadDocument: (file: File, namespace: string, createNew: boolean = false) => {
+  uploadDocument: (file: File, namespace: string, createNew: boolean = false, category?: string, tags?: string) => {
     const formData = new FormData()
     formData.append('file', file)
     formData.append('namespace', namespace)
     formData.append('create_new', createNew.toString())
+    if (category) formData.append('category', category)
+    if (tags) formData.append('tags', tags)
 
     return api.post('/upload_documents', formData, {
       headers: {
@@ -89,6 +97,24 @@ export const apiService = {
 
   addMessage: (conversationId: string, data: { role: string; content: string }) =>
     api.post(`/conversations/${conversationId}/messages`, data),
+
+  // CSV/Excel file management
+  uploadCsvFile: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+
+    return api.post('/upload_csv', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
+
+  getCsvFiles: () => api.get('/csv_files'),
+
+  loadCsvFile: (fileId: string) => api.get(`/csv_files/${fileId}`),
+
+  deleteCsvFile: (fileId: string) => api.delete(`/csv_files/${fileId}`),
 }
 
 export default api

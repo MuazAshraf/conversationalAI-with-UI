@@ -28,36 +28,39 @@ function AppContent() {
   const [namespaces, setNamespaces] = useState<Namespace[]>([])
   const [isUploading, setIsUploading] = useState(false)
 
+  // Fetch namespaces from API
+  const fetchNamespaces = async () => {
+    try {
+      const response = await apiService.getNamespaces()
+      if (response.data.namespaces_with_stats) {
+        const namespaceList = response.data.namespaces_with_stats.map((ns: any, index: number) => ({
+          id: `namespace_${index}`,
+          name: ns.name,
+          document_count: ns.vector_count || 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }))
+        setNamespaces(namespaceList)
+      } else {
+        const namespaceList = (response.data.namespaces || []).map((name: string, index: number) => ({
+          id: `namespace_${index}`,
+          name: name,
+          document_count: 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }))
+        setNamespaces(namespaceList)
+      }
+    } catch (error) {
+      console.error('Failed to load namespaces:', error)
+    }
+  }
+
   // Load namespaces and conversations on component mount
   useEffect(() => {
     const loadInitialData = async () => {
       // Load namespaces
-      try {
-        const response = await apiService.getNamespaces()
-
-        // Use namespaces_with_stats if available, otherwise fall back to namespaces
-        if (response.data.namespaces_with_stats) {
-          const namespaceList = response.data.namespaces_with_stats.map((ns: any, index: number) => ({
-            id: `namespace_${index}`,
-            name: ns.name,
-            document_count: ns.vector_count || 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }))
-          setNamespaces(namespaceList)
-        } else {
-          const namespaceList = (response.data.namespaces || []).map((name: string, index: number) => ({
-            id: `namespace_${index}`,
-            name: name,
-            document_count: 0,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          }))
-          setNamespaces(namespaceList)
-        }
-      } catch (error) {
-        console.error('Failed to load namespaces:', error)
-      }
+      await fetchNamespaces()
 
       // Load conversations
       try {
@@ -70,7 +73,7 @@ function AppContent() {
     loadInitialData()
   }, [dispatch])
 
-  const handleUpload = async (files: File[], namespace: string) => {
+  const handleUpload = async (files: File[], namespace: string, category?: string, tags?: string) => {
     setIsUploading(true)
     try {
       // Check if namespace exists
@@ -79,33 +82,12 @@ function AppContent() {
 
       // Upload files one by one to match backend's single file upload
       for (const file of files) {
-        const response = await apiService.uploadDocument(file, namespace, isNewNamespace)
+        const response = await apiService.uploadDocument(file, namespace, isNewNamespace, category, tags)
         console.log('Upload successful:', response.data)
       }
 
       // Reload namespaces after successful upload
-      const namespacesResponse = await apiService.getNamespaces()
-
-      // Use namespaces_with_stats if available, otherwise fall back to namespaces
-      if (namespacesResponse.data.namespaces_with_stats) {
-        const namespaceList = namespacesResponse.data.namespaces_with_stats.map((ns: any, index: number) => ({
-          id: `namespace_${index}`,
-          name: ns.name,
-          document_count: ns.vector_count || 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }))
-        setNamespaces(namespaceList)
-      } else {
-        const namespaceList = (namespacesResponse.data.namespaces || []).map((name: string, index: number) => ({
-          id: `namespace_${index}`,
-          name: name,
-          document_count: 0,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }))
-        setNamespaces(namespaceList)
-      }
+      await fetchNamespaces()
 
       alert(`Successfully uploaded ${files.length} file(s) to namespace "${namespace}"`)
     } catch (error) {
@@ -122,10 +104,11 @@ function AppContent() {
         return <HomePage />
       case 'upload':
         return (
-          <UploadPage 
+          <UploadPage
             namespaces={namespaces}
             onUpload={handleUpload}
             isUploading={isUploading}
+            onRefreshNamespaces={fetchNamespaces}
           />
         )
       case 'chat':

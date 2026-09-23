@@ -16,7 +16,7 @@ const ChatInput = ({ value, onChange, onSend, onKeyPress, disabled }: ChatInputP
   return (
     <div className={cn(
       "flex items-end gap-2 p-3 border rounded-lg transition-colors",
-      isFocused ? "border-blue-500 ring-1 ring-blue-500" : "border-gray-300",
+      isFocused ? "border-blue-500" : "border-gray-300",
       disabled && "opacity-50 cursor-not-allowed"
     )}>
       <textarea
@@ -27,11 +27,14 @@ const ChatInput = ({ value, onChange, onSend, onKeyPress, disabled }: ChatInputP
         onBlur={() => setIsFocused(false)}
         placeholder="Type your message here..."
         disabled={disabled}
-        className="flex-1 resize-none border-none outline-none text-sm placeholder-gray-500 max-h-32"
+        className="flex-1 resize-none appearance-none border-0 bg-transparent p-0 text-sm placeholder-gray-500 max-h-32 focus:border-0 focus:outline-none focus:ring-0"
         rows={1}
         style={{
           height: 'auto',
           minHeight: '24px',
+          border: 0,
+          outline: 'none',
+          boxShadow: 'none',
         }}
         onInput={(e) => {
           const target = e.target as HTMLTextAreaElement

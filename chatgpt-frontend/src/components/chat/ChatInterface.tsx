@@ -1,26 +1,31 @@
 import { useState, useRef, useEffect } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { RootState } from '../../store/store'
-import { addMessage, updateMessage, setLoading, setStreaming, setError, setMessages } from '../../store/slices/chatSlice'
+import { addMessage, updateMessage, setLoading, setStreaming, setError, setMessages, setMode, setSelectedFileId, setCsvFiles } from '../../store/slices/chatSlice'
 import { addConversation, updateConversation, setCurrentConversationId } from '../../store/slices/conversationSlice'
 import { apiService } from '../../services/api'
-import { Message, Conversation, Namespace, Citation } from '../../types'
+import { Message, Conversation, Namespace, Citation, CSVFile } from '../../types'
 import MessageList from './MessageList'
 import ChatInput from './ChatInput'
-import { Send, Loader2, ChevronDown, Globe } from 'lucide-react'
+import { Send, Loader2, ChevronDown, Globe, FileSpreadsheet, Headphones, WandSparkles } from 'lucide-react'
 
 const ChatInterface = () => {
   const dispatch = useDispatch()
-  const { messages, isLoading, isStreaming, error } = useSelector((state: RootState) => state.chat)
+  const { messages, isLoading, isStreaming, error, mode, selectedFileId, csvFiles } = useSelector((state: RootState) => state.chat)
   const { currentConversationId } = useSelector((state: RootState) => state.conversations)
   const [inputValue, setInputValue] = useState('')
   const [enableStreaming, setEnableStreaming] = useState(false) // Toggle for streaming - disabled by default
   const [selectedNamespace, setSelectedNamespace] = useState<string>('default_namespace')
   const [namespaces, setNamespaces] = useState<string[]>([])
   const [showNamespaceDropdown, setShowNamespaceDropdown] = useState(false)
+  const [showCsvDropdown, setShowCsvDropdown] = useState(false)
+  const [customerSupportEnabled, setCustomerSupportEnabled] = useState(false)
+  const [contentOptimizerEnabled, setContentOptimizerEnabled] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
+  const skipNextConversationLoadRef = useRef(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  const csvDropdownRef = useRef<HTMLDivElement>(null)
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -44,6 +49,13 @@ const ChatInterface = () => {
   useEffect(() => {
     const loadConversationMessages = async () => {
       if (currentConversationId) {
+        // A newly created conversation is still empty on the server until /ask
+        // finishes. Keep the optimistic user message instead of replacing it
+        // with that temporary empty response.
+        if (skipNextConversationLoadRef.current) {
+          skipNextConversationLoadRef.current = false
+          return
+        }
         try {
           const response = await apiService.getConversation(currentConversationId)
           if (response.data) {
@@ -105,11 +117,27 @@ const ChatInterface = () => {
     return () => clearInterval(interval)
   }, [currentConversationId])
 
-  // Close dropdown when clicking outside
+  // Load CSV files on mount
+  useEffect(() => {
+    const loadCsvFiles = async () => {
+      try {
+        const response = await apiService.getCsvFiles()
+        dispatch(setCsvFiles(response.data.files || []))
+      } catch (error) {
+        console.error('Failed to load CSV files:', error)
+      }
+    }
+    loadCsvFiles()
+  }, [dispatch])
+
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setShowNamespaceDropdown(false)
+      }
+      if (csvDropdownRef.current && !csvDropdownRef.current.contains(event.target as Node)) {
+        setShowCsvDropdown(false)
       }
     }
     document.addEventListener('mousedown', handleClickOutside)
@@ -121,15 +149,17 @@ const ChatInterface = () => {
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return
 
+    const submittedMessage = inputValue.trim()
+
     console.log('=== FRONTEND CHAT DEBUG ===')
     console.log('Selected Namespace:', selectedNamespace)
     console.log('Current Conversation ID:', currentConversationId)
-    console.log('User Question:', inputValue.trim())
+    console.log('User Question:', submittedMessage)
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: inputValue.trim(),
+      content: submittedMessage,
       timestamp: new Date().toISOString(),
     }
 
@@ -139,11 +169,12 @@ const ChatInterface = () => {
       console.log('Creating new conversation with namespace:', selectedNamespace)
       try {
         const response = await apiService.createConversation({
-          title: inputValue.trim().substring(0, 50) + (inputValue.trim().length > 50 ? '...' : ''),
+          title: submittedMessage.substring(0, 50) + (submittedMessage.length > 50 ? '...' : ''),
           namespace: selectedNamespace
         })
         conversationId = response.data.id
         console.log('New conversation created:', conversationId, 'with namespace:', response.data.namespace)
+        skipNextConversationLoadRef.current = true
         dispatch(setCurrentConversationId(conversationId))
         dispatch(addConversation(response.data))
       } catch (error) {
@@ -164,7 +195,7 @@ const ChatInterface = () => {
         dispatch(setStreaming(true))
 
         const eventSource = apiService.stream({
-          query: inputValue.trim(),
+          query: submittedMessage,
           thread_id: conversationId || undefined,
         })
 
@@ -220,29 +251,55 @@ const ChatInterface = () => {
           dispatch(setStreaming(false))
         }
       } else {
-        // Regular non-streaming request with namespace using /ask endpoint
+        // Regular non-streaming request - supports both Pinecone and CSV modes
         console.log('Sending to backend /ask:')
+        console.log('  - Mode:', mode)
         console.log('  - Namespace:', selectedNamespace)
+        console.log('  - File ID:', selectedFileId)
         console.log('  - Thread ID:', conversationId || 'default')
         console.log('  - Question:', userMessage.content)
 
-        const response = await apiService.ask({
-          namespace: selectedNamespace,
+        const requestData: any = {
+          mode,
           thread_id: conversationId || 'default',
-          messages: [{ question: userMessage.content }]
-        })
+          messages: [{ question: userMessage.content }],
+          enabled_tools: [
+            ...(customerSupportEnabled ? ['customer_support'] : []),
+            ...(contentOptimizerEnabled ? ['content_optimizer'] : [])
+          ]
+        }
+
+        if (mode === 'csv') {
+          if (!selectedFileId) {
+            dispatch(setError('Please select a CSV/Excel file'))
+            dispatch(setLoading(false))
+            return
+          }
+          requestData.file_id = selectedFileId
+        } else {
+          requestData.namespace = selectedNamespace
+        }
+
+        const response = await apiService.ask(requestData)
 
         console.log('Response from backend:', response.data)
-        console.log('Backend used namespace:', response.data.namespace_used)
-        console.log('Citations received:', response.data.citations)
+        console.log('Backend mode:', response.data.mode)
+        if (mode === 'csv') {
+          console.log('File used:', response.data.file_used)
+        } else {
+          console.log('Namespace used:', response.data.namespace_used)
+          console.log('Citations received:', response.data.citations)
+        }
 
         const assistantMessage: Message & { citations?: Citation[] } = {
           id: (Date.now() + 1).toString(),
           role: 'assistant',
           content: response.data.response || response.data.output || 'No response received',
           timestamp: new Date().toISOString(),
-          sources: response.data.sources || [],  // Include sources from response if available
-          citations: response.data.citations || []  // Include citations with scores
+          sources: response.data.sources || [],
+          citations: response.data.citations || [],
+          toolsUsed: response.data.tools_used || [],
+          evaluation: response.data.evaluation
         }
 
         dispatch(addMessage(assistantMessage))
@@ -266,58 +323,149 @@ const ChatInterface = () => {
     <div className="flex flex-col h-full bg-white">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold text-gray-900">
             {currentConversationId ? "Conversation" : "New Chat"}
           </h1>
 
-          {/* Namespace Dropdown */}
-          <div className="relative" ref={dropdownRef}>
-            <button
-              onClick={() => !currentConversationId && setShowNamespaceDropdown(!showNamespaceDropdown)}
-              className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                currentConversationId
-                  ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
-                  : 'bg-gray-100 hover:bg-gray-200 cursor-pointer'
-              }`}
-              title={currentConversationId ? "Namespace is locked during active conversation" : "Select namespace"}
-            >
-              <span className="text-gray-700">Namespace:</span>
-              <span className="font-medium">{selectedNamespace}</span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${showNamespaceDropdown ? 'rotate-180' : ''}`} />
-              {currentConversationId && (
-                <span className="text-xs text-gray-400 ml-1">(locked)</span>
-              )}
-            </button>
+          {/* Mode Toggle */}
+          <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 bg-blue-50 rounded-lg">
+            <FileSpreadsheet className="w-4 h-4 text-blue-600" />
+            <input
+              type="checkbox"
+              checked={mode === 'csv'}
+              onChange={(e) => dispatch(setMode(e.target.checked ? 'csv' : 'pinecone'))}
+              className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm font-medium text-blue-700">Chat with CSV/Excel</span>
+          </label>
 
-            {showNamespaceDropdown && (
-              <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
-                <div className="py-1">
-                  {namespaces.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-gray-500">
-                      No namespaces available
-                    </div>
-                  ) : (
-                    namespaces.map((namespace) => (
-                      <button
-                        key={namespace}
-                        onClick={() => {
-                          console.log('User selected namespace:', namespace)
-                          setSelectedNamespace(namespace)
-                          setShowNamespaceDropdown(false)
-                        }}
-                        className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors ${
-                          selectedNamespace === namespace ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
-                        }`}
-                      >
-                        {namespace}
-                      </button>
-                    ))
-                  )}
+          {mode === 'pinecone' && (
+            <>
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 bg-amber-50 rounded-lg">
+                <Headphones className="w-4 h-4 text-amber-600" />
+                <input
+                  type="checkbox"
+                  checked={customerSupportEnabled}
+                  onChange={(event) => setCustomerSupportEnabled(event.target.checked)}
+                  className="w-4 h-4 text-amber-600 bg-gray-100 border-gray-300 rounded focus:ring-amber-500"
+                />
+                <span className="text-sm font-medium text-amber-700">Customer Support</span>
+              </label>
+
+              <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 bg-purple-50 rounded-lg">
+                <WandSparkles className="w-4 h-4 text-purple-600" />
+                <input
+                  type="checkbox"
+                  checked={contentOptimizerEnabled}
+                  onChange={(event) => setContentOptimizerEnabled(event.target.checked)}
+                  className="w-4 h-4 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500"
+                />
+                <span className="text-sm font-medium text-purple-700">Content + Human Approval</span>
+              </label>
+            </>
+          )}
+
+          {/* Conditional Dropdowns */}
+          {mode === 'pinecone' ? (
+            /* Namespace Dropdown */
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => !currentConversationId && setShowNamespaceDropdown(!showNamespaceDropdown)}
+                className={`flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors ${
+                  currentConversationId
+                    ? 'bg-gray-50 text-gray-500 cursor-not-allowed'
+                    : 'bg-gray-100 hover:bg-gray-200 cursor-pointer'
+                }`}
+                title={currentConversationId ? "Namespace is locked during active conversation" : "Select namespace"}
+              >
+                <Globe className="w-4 h-4" />
+                <span className="text-gray-700">Namespace:</span>
+                <span className="font-medium">{selectedNamespace}</span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${showNamespaceDropdown ? 'rotate-180' : ''}`} />
+                {currentConversationId && (
+                  <span className="text-xs text-gray-400 ml-1">(locked)</span>
+                )}
+              </button>
+
+              {showNamespaceDropdown && (
+                <div className="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                  <div className="py-1 max-h-64 overflow-y-auto">
+                    {namespaces.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-gray-500">
+                        No namespaces available
+                      </div>
+                    ) : (
+                      namespaces.map((namespace) => (
+                        <button
+                          key={namespace}
+                          onClick={() => {
+                            console.log('User selected namespace:', namespace)
+                            setSelectedNamespace(namespace)
+                            setShowNamespaceDropdown(false)
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                            selectedNamespace === namespace ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                          }`}
+                        >
+                          {namespace}
+                        </button>
+                      ))
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          ) : (
+            /* CSV File Dropdown */
+            <div className="relative" ref={csvDropdownRef}>
+              <button
+                onClick={() => setShowCsvDropdown(!showCsvDropdown)}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors bg-green-100 hover:bg-green-200 cursor-pointer"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-green-700" />
+                <span className="text-gray-700">File:</span>
+                <span className="font-medium text-green-700">
+                  {selectedFileId ? csvFiles.find(f => f.id === selectedFileId)?.original_filename || 'Select file' : 'Select file'}
+                </span>
+                <ChevronDown className={`w-4 h-4 transition-transform ${showCsvDropdown ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showCsvDropdown && (
+                <div className="absolute top-full left-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                  <div className="py-1 max-h-64 overflow-y-auto">
+                    {csvFiles.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-gray-500">
+                        No CSV/Excel files uploaded yet
+                      </div>
+                    ) : (
+                      csvFiles.map((file) => (
+                        <button
+                          key={file.id}
+                          onClick={() => {
+                            console.log('User selected file:', file.original_filename)
+                            dispatch(setSelectedFileId(file.id))
+                            setShowCsvDropdown(false)
+                          }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-100 transition-colors ${
+                            selectedFileId === file.id ? 'bg-green-50 text-green-700 font-medium' : 'text-gray-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{file.original_filename}</span>
+                            <span className="text-xs text-gray-500">{file.rows} rows</span>
+                          </div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {file.columns} columns • {file.file_type.toUpperCase()}
+                          </div>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-4">

@@ -20,7 +20,7 @@ const HomePage = () => {
           </div>
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Upload Documents</h3>
           <p className="text-gray-600 text-sm">
-            Upload PDF, TXT, DOC files to your knowledge base for AI-powered analysis and search.
+            Upload PDF, TXT, CSV, XLS, XLSX files to your knowledge base for AI-powered analysis and search.
           </p>
         </div>
 
@@ -67,7 +67,7 @@ const HomePage = () => {
         <div className="grid md:grid-cols-2 gap-4 text-sm text-gray-600">
           <div className="flex items-center gap-2">
             <FileText className="w-4 h-4 text-blue-600" />
-            <span>Support for PDF, TXT, DOC, DOCX files</span>
+            <span>Support for PDF, TXT, CSV, XLS, XLSX files</span>
           </div>
           <div className="flex items-center gap-2">
             <MessageSquare className="w-4 h-4 text-green-600" />

@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit'
-import { Message } from '../../types'
+import { Message, ChatMode, CSVFile } from '../../types'
 
 interface ChatState {
   messages: Message[]
@@ -7,6 +7,9 @@ interface ChatState {
   isStreaming: boolean
   currentQuery: string
   error: string | null
+  mode: ChatMode
+  selectedFileId: string | null
+  csvFiles: CSVFile[]
 }
 
 const initialState: ChatState = {
@@ -15,6 +18,9 @@ const initialState: ChatState = {
   isStreaming: false,
   currentQuery: '',
   error: null,
+  mode: 'pinecone',
+  selectedFileId: null,
+  csvFiles: [],
 }
 
 const chatSlice = createSlice({
@@ -60,6 +66,19 @@ const chatSlice = createSlice({
       state.currentQuery = ''
       state.error = null
     },
+    setMode: (state, action: PayloadAction<ChatMode>) => {
+      state.mode = action.payload
+      // Clear selected file when switching to pinecone mode
+      if (action.payload === 'pinecone') {
+        state.selectedFileId = null
+      }
+    },
+    setSelectedFileId: (state, action: PayloadAction<string | null>) => {
+      state.selectedFileId = action.payload
+    },
+    setCsvFiles: (state, action: PayloadAction<CSVFile[]>) => {
+      state.csvFiles = action.payload
+    },
   },
 })
 
@@ -73,6 +92,9 @@ export const {
   setCurrentQuery,
   setError,
   clearChat,
+  setMode,
+  setSelectedFileId,
+  setCsvFiles,
 } = chatSlice.actions
 
 export default chatSlice.reducer

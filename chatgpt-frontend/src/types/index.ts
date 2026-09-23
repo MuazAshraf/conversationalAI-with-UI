@@ -1,11 +1,16 @@
 export interface Citation {
   score: number
+  relevance?: 'High' | 'Medium' | 'Low'
   title: string
-  chunk: string
-  page: string | number
-  tags: string[]
-  source: string
+  source?: string
+  url?: string
+  source_type?: 'document' | 'web'
+  original_filename?: string
+  file_type?: string
+  page?: number | null
   preview: string
+  category?: string
+  tags: string[]
 }
 
 export interface Source {
@@ -21,6 +26,13 @@ export interface Message {
   timestamp: string
   sources?: Source[]
   citations?: Citation[]
+  toolsUsed?: string[]
+  evaluation?: {
+    mode: string
+    attempts: number
+    verdict: string
+    reason: string
+  }
 }
 
 export interface Conversation {
@@ -75,3 +87,18 @@ export interface UploadResponse {
   namespace: string
   total_documents: number
 }
+
+export interface CSVFile {
+  id: string
+  filename: string
+  original_filename: string
+  file_type: 'csv' | 'xls' | 'xlsx'
+  rows: number
+  columns: number
+  column_names: string[]
+  preview: any[]
+  created_at: string
+  updated_at: string
+}
+
+export type ChatMode = 'pinecone' | 'csv'
