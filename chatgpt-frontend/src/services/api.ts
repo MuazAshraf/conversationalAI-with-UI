@@ -47,8 +47,17 @@ export const apiService = {
     file_id?: string;
     thread_id?: string;
     enabled_tools?: Array<'customer_support' | 'content_optimizer'>;
+    attachment?: { filename: string; text: string };
     messages: Array<{ question: string }>
   }) => api.post('/ask', data),
+
+  extractOptimizerFile: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/extract_optimizer_file', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 
   // Get all namespaces
   getNamespaces: () => api.get('/namespaces'),

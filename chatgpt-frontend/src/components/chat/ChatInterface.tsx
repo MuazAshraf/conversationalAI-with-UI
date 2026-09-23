@@ -21,6 +21,7 @@ const ChatInterface = () => {
   const [showCsvDropdown, setShowCsvDropdown] = useState(false)
   const [customerSupportEnabled, setCustomerSupportEnabled] = useState(false)
   const [contentOptimizerEnabled, setContentOptimizerEnabled] = useState(false)
+  const [optimizerAttachment, setOptimizerAttachment] = useState<File | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
   const skipNextConversationLoadRef = useRef(false)
@@ -64,7 +65,10 @@ const ChatInterface = () => {
               id: msg.id || Date.now().toString(),
               role: msg.role,
               content: msg.content,
-              timestamp: msg.timestamp
+              timestamp: msg.timestamp,
+              citations: msg.citations || [],
+              toolsUsed: msg.tools_used || [],
+              evaluation: msg.evaluation || undefined,
             }))
             dispatch(setMessages(messages))
 
@@ -147,9 +151,9 @@ const ChatInterface = () => {
   }, [])
 
   const handleSendMessage = async () => {
-    if (!inputValue.trim() || isLoading) return
+    if ((!inputValue.trim() && !optimizerAttachment) || isLoading) return
 
-    const submittedMessage = inputValue.trim()
+    const submittedMessage = inputValue.trim() || 'Optimize the attached document.'
 
     console.log('=== FRONTEND CHAT DEBUG ===')
     console.log('Selected Namespace:', selectedNamespace)
@@ -159,7 +163,9 @@ const ChatInterface = () => {
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: submittedMessage,
+      content: optimizerAttachment
+        ? `${submittedMessage}\n\n📎 ${optimizerAttachment.name}`
+        : submittedMessage,
       timestamp: new Date().toISOString(),
     }
 
@@ -269,6 +275,17 @@ const ChatInterface = () => {
           ]
         }
 
+        if (optimizerAttachment) {
+          if (!contentOptimizerEnabled) {
+            throw new Error('Enable Content + Human Approval before attaching a document')
+          }
+          const extracted = await apiService.extractOptimizerFile(optimizerAttachment)
+          requestData.attachment = {
+            filename: extracted.data.filename,
+            text: extracted.data.text,
+          }
+        }
+
         if (mode === 'csv') {
           if (!selectedFileId) {
             dispatch(setError('Please select a CSV/Excel file'))
@@ -303,6 +320,7 @@ const ChatInterface = () => {
         }
 
         dispatch(addMessage(assistantMessage))
+        setOptimizerAttachment(null)
       }
     } catch (error: any) {
       console.error('Chat error:', error)
@@ -358,7 +376,10 @@ const ChatInterface = () => {
                 <input
                   type="checkbox"
                   checked={contentOptimizerEnabled}
-                  onChange={(event) => setContentOptimizerEnabled(event.target.checked)}
+                  onChange={(event) => {
+                    setContentOptimizerEnabled(event.target.checked)
+                    if (!event.target.checked) setOptimizerAttachment(null)
+                  }}
                   className="w-4 h-4 text-purple-600 bg-gray-100 border-gray-300 rounded focus:ring-purple-500"
                 />
                 <span className="text-sm font-medium text-purple-700">Content + Human Approval</span>
@@ -507,6 +528,9 @@ const ChatInterface = () => {
           onSend={handleSendMessage}
           onKeyPress={handleKeyPress}
           disabled={isLoading}
+          attachment={optimizerAttachment}
+          attachmentEnabled={mode === 'pinecone' && contentOptimizerEnabled}
+          onAttachmentChange={setOptimizerAttachment}
         />
       </div>
     </div>
